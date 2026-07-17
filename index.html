@@ -1,0 +1,767 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>禅意番茄钟</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@200;300;400;500;600;700&display=swap');
+
+  body {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    overflow: hidden;
+    position: relative;
+    background: #0f0f1a;
+  }
+
+  /* ========== 动态渐变背景 ========== */
+  .bg-gradient {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    background:
+      radial-gradient(ellipse 80% 60% at 20% 30%, rgba(88, 60, 180, 0.45), transparent),
+      radial-gradient(ellipse 70% 50% at 80% 70%, rgba(30, 120, 180, 0.40), transparent),
+      radial-gradient(ellipse 50% 70% at 50% 50%, rgba(140, 50, 160, 0.25), transparent);
+    background-color: var(--bg-color, #0f0f1a);
+    transition: background-color 1.5s ease;
+    animation: breathe 18s ease-in-out infinite alternate;
+  }
+  @keyframes breathe {
+    0%   { transform: scale(1) rotate(0deg);   filter: hue-rotate(0deg) saturate(1); }
+    33%  { transform: scale(1.08) rotate(0.8deg); filter: hue-rotate(8deg) saturate(1.15); }
+    66%  { transform: scale(0.96) rotate(-0.5deg); filter: hue-rotate(-5deg) saturate(0.9); }
+    100% { transform: scale(1.05) rotate(0.3deg); filter: hue-rotate(12deg) saturate(1.2); }
+  }
+
+  /* 微妙的噪点纹理叠加 */
+  .bg-noise {
+    position: fixed;
+    inset: 0;
+    z-index: 1;
+    opacity: 0.035;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    background-repeat: repeat;
+    background-size: 256px 256px;
+    pointer-events: none;
+  }
+
+  /* ========== 主卡片 ========== */
+  .glass-card {
+    position: relative;
+    z-index: 10;
+    background: rgba(255, 255, 255, 0.045);
+    backdrop-filter: blur(28px) saturate(1.5);
+    -webkit-backdrop-filter: blur(28px) saturate(1.5);
+    border-radius: 64px;
+    padding: 64px 80px 56px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow:
+      0 25px 60px -12px rgba(0, 0, 0, 0.6),
+      inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 48px;
+    min-width: 440px;
+  }
+
+  /* ========== SVG 圆环 ========== */
+  .ring-wrapper {
+    position: relative;
+    width: 280px;
+    height: 280px;
+  }
+  .ring-wrapper svg {
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+  .ring-bg {
+    fill: none;
+    stroke: rgba(255, 255, 255, 0.04);
+    stroke-width: 4;
+  }
+  .ring-progress {
+    fill: none;
+    stroke: url(#ringGrad);
+    stroke-width: 4;
+    stroke-linecap: round;
+    stroke-dasharray: 754;
+    stroke-dashoffset: 0;
+    transform: rotate(-90deg);
+    transform-origin: center;
+    filter: drop-shadow(0 0 8px rgba(140, 100, 255, 0.3));
+    transition: stroke-dashoffset 0.4s linear, filter 0.5s ease;
+  }
+
+  /* 紧急状态覆盖 — 通过 JS 切换 class */
+  .ring-progress.urgent {
+    stroke: url(#ringGradUrgent);
+    filter: drop-shadow(0 0 14px rgba(255, 51, 85, 0.5));
+  }
+
+  /* 抖动动画 */
+  @keyframes shake-warning {
+    0%, 100% { transform: translateX(0); }
+    10%      { transform: translateX(-2px); }
+    20%      { transform: translateX(2px); }
+    30%      { transform: translateX(-2px); }
+    40%      { transform: translateX(1px); }
+    50%      { transform: translateX(-1px); }
+    60%      { transform: translateX(1px); }
+    70%      { transform: translateX(-1px); }
+    80%      { transform: translateX(0); }
+  }
+  .ring-wrapper.shaking {
+    animation: shake-warning 0.5s ease-in-out;
+    animation-iteration-count: infinite;
+  }
+
+  /* 计时数字 */
+  .timer-display {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+  }
+  .timer-display .time {
+    font-size: 64px;
+    font-weight: 200;
+    letter-spacing: 6px;
+    color: rgba(255, 255, 255, 0.92);
+    text-shadow: 0 0 40px rgba(140, 100, 255, 0.15);
+    font-variant-numeric: tabular-nums;
+  }
+  .timer-display .label {
+    font-size: 13px;
+    font-weight: 400;
+    letter-spacing: 6px;
+    color: rgba(255, 255, 255, 0.3);
+    text-transform: uppercase;
+    margin-top: 4px;
+  }
+
+  /* ========== 按钮区域 ========== */
+  .controls {
+    display: flex;
+    gap: 20px;
+  }
+  .btn {
+    position: relative;
+    padding: 12px 40px;
+    border: 1px solid rgba(255, 255, 255, 0.10);
+    border-radius: 40px;
+    background: rgba(255, 255, 255, 0.04);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    color: rgba(255, 255, 255, 0.75);
+    font-family: inherit;
+    font-size: 15px;
+    font-weight: 400;
+    letter-spacing: 2px;
+    cursor: pointer;
+    transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    overflow: hidden;
+    user-select: none;
+  }
+  .btn::before {
+    content: '';
+    position: absolute;
+    inset: -2px;
+    border-radius: 42px;
+    background: radial-gradient(ellipse at var(--mx, 50%) var(--my, 50%),
+      rgba(180, 140, 255, 0.35) 0%,
+      rgba(100, 180, 255, 0.15) 40%,
+      transparent 70%);
+    opacity: 0;
+    transition: opacity 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+    z-index: -1;
+  }
+  .btn:hover {
+    color: rgba(255, 255, 255, 0.95);
+    border-color: rgba(180, 140, 255, 0.30);
+    background: rgba(255, 255, 255, 0.07);
+    transform: translateY(-2px) scale(1.02);
+    box-shadow:
+      0 0 30px rgba(140, 100, 255, 0.15),
+      0 8px 32px -8px rgba(0, 0, 0, 0.4);
+  }
+  .btn:hover::before {
+    opacity: 1;
+  }
+  .btn:active {
+    transform: translateY(0) scale(0.98);
+  }
+
+  /* 呼吸发光动画 — hover 时激活 */
+  @keyframes breathe-glow {
+    0%   { box-shadow: 0 0 20px rgba(140, 100, 255, 0.10), 0 0 40px rgba(140, 100, 255, 0.05); }
+    50%  { box-shadow: 0 0 35px rgba(140, 100, 255, 0.30), 0 0 60px rgba(140, 100, 255, 0.12); }
+    100% { box-shadow: 0 0 20px rgba(140, 100, 255, 0.10), 0 0 40px rgba(140, 100, 255, 0.05); }
+  }
+  .btn:hover {
+    animation: breathe-glow 2.4s ease-in-out infinite;
+  }
+
+  /* ========== 音效按钮（小圆） ========== */
+  .sound-panel {
+    position: fixed;
+    bottom: 48px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 10;
+    display: flex;
+    gap: 24px;
+  }
+  .sound-btn {
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.04);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    color: rgba(255, 255, 255, 0.5);
+    font-size: 26px;
+    cursor: pointer;
+    transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    user-select: none;
+    position: relative;
+    overflow: hidden;
+  }
+  .sound-btn::before {
+    content: '';
+    position: absolute;
+    inset: -2px;
+    border-radius: 50%;
+    background: radial-gradient(ellipse at var(--mx, 50%) var(--my, 50%),
+      rgba(140, 200, 255, 0.30) 0%,
+      rgba(140, 100, 255, 0.12) 40%,
+      transparent 70%);
+    opacity: 0;
+    transition: opacity 0.6s ease;
+    z-index: -1;
+  }
+  .sound-btn:hover {
+    color: rgba(255, 255, 255, 0.9);
+    border-color: rgba(180, 180, 255, 0.25);
+    background: rgba(255, 255, 255, 0.08);
+    transform: translateY(-3px) scale(1.08);
+    box-shadow:
+      0 0 25px rgba(140, 160, 255, 0.20),
+      0 8px 28px -6px rgba(0, 0, 0, 0.4);
+    animation: breathe-glow 2.4s ease-in-out infinite;
+  }
+  .sound-btn:hover::before {
+    opacity: 1;
+  }
+  .sound-btn:active {
+    transform: translateY(0) scale(0.95);
+  }
+  .sound-btn:active::before {
+    opacity: 0.6;
+  }
+
+  /* 音效按钮标签 — hover 浮现 */
+  .sound-btn .tooltip {
+    position: absolute;
+    bottom: calc(100% + 10px);
+    left: 50%;
+    transform: translateX(-50%) scale(0.8);
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    color: rgba(255, 255, 255, 0.7);
+    padding: 4px 12px;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 300;
+    letter-spacing: 1px;
+    white-space: nowrap;
+    opacity: 0;
+    pointer-events: none;
+    transition: all 0.3s ease;
+  }
+  .sound-btn:hover .tooltip {
+    opacity: 1;
+    transform: translateX(-50%) scale(1);
+  }
+
+  /* ========== 响应式 ========== */
+  @media (max-width: 640px) {
+    .glass-card {
+      padding: 40px 32px 36px;
+      border-radius: 40px;
+      min-width: unset;
+      width: calc(100% - 32px);
+      gap: 36px;
+    }
+    .ring-wrapper {
+      width: 220px;
+      height: 220px;
+    }
+    .timer-display .time {
+      font-size: 48px;
+      letter-spacing: 4px;
+    }
+    .btn {
+      padding: 10px 28px;
+      font-size: 13px;
+    }
+    .sound-panel {
+      bottom: 32px;
+      gap: 18px;
+    }
+    .sound-btn {
+      width: 54px;
+      height: 54px;
+      font-size: 22px;
+    }
+  }
+
+  @media (max-width: 400px) {
+    .glass-card {
+      padding: 28px 20px 28px;
+      border-radius: 32px;
+      gap: 28px;
+    }
+    .ring-wrapper {
+      width: 180px;
+      height: 180px;
+    }
+    .timer-display .time {
+      font-size: 38px;
+      letter-spacing: 3px;
+    }
+    .controls {
+      gap: 12px;
+    }
+    .btn {
+      padding: 8px 20px;
+      font-size: 12px;
+    }
+    .sound-btn {
+      width: 46px;
+      height: 46px;
+      font-size: 18px;
+    }
+  }
+</style>
+</head>
+<body>
+
+  <!-- 动态渐变背景 -->
+  <div class="bg-gradient"></div>
+  <div class="bg-noise"></div>
+
+  <!-- 主卡片 -->
+  <div class="glass-card">
+
+    <!-- SVG 圆环 -->
+    <div class="ring-wrapper">
+      <svg viewBox="0 0 280 280" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <!-- 默认橙→蓝紫渐变 -->
+          <linearGradient id="ringGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%"   stop-color="#FF8C42" />
+            <stop offset="35%"  stop-color="#FFD166" />
+            <stop offset="65%"  stop-color="#6C5CE7" />
+            <stop offset="100%" stop-color="#4D9DE0" />
+          </linearGradient>
+          <!-- ≤5min 猩红渐变 -->
+          <linearGradient id="ringGradUrgent" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%"   stop-color="#FF3355" />
+            <stop offset="50%"  stop-color="#FF1A4A" />
+            <stop offset="100%" stop-color="#CC1144" />
+          </linearGradient>
+          <filter id="ringGlow">
+            <feGaussianBlur stdDeviation="3" result="blur"/>
+            <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+          </filter>
+          <!-- 紧急状态红辉光 -->
+          <filter id="ringGlowUrgent">
+            <feGaussianBlur stdDeviation="4" result="blur"/>
+            <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+          </filter>
+        </defs>
+        <!-- 背景圆环 -->
+        <circle class="ring-bg" cx="140" cy="140" r="120" />
+        <!-- 进度圆环 -->
+        <circle
+          id="ringProgress"
+          class="ring-progress"
+          cx="140" cy="140" r="120"
+          stroke-dasharray="753.98"
+          stroke-dashoffset="0"
+        />
+      </svg>
+      <div class="timer-display">
+        <span class="time" id="timerDisplay">25:00</span>
+        <span class="label">Focus</span>
+      </div>
+    </div>
+
+    <!-- 控制按钮 -->
+    <div class="controls">
+      <button class="btn" id="btnStart">开始</button>
+      <button class="btn" id="btnReset">重置</button>
+    </div>
+  </div>
+
+  <!-- 音效按钮 -->
+  <div class="sound-panel">
+    <button class="sound-btn" data-sound="rain">
+      ☔️
+      <span class="tooltip">雨声</span>
+    </button>
+    <button class="sound-btn" data-sound="ocean">
+      🌊
+      <span class="tooltip">海浪声</span>
+    </button>
+    <button class="sound-btn" data-sound="forest">
+      🌲
+      <span class="tooltip">森林声</span>
+    </button>
+  </div>
+
+  <!-- 鼠标追踪：让 hover 光效跟随鼠标位置 -->
+  <script>
+    document.querySelectorAll('.btn, .sound-btn').forEach(el => {
+      el.addEventListener('mousemove', e => {
+        const rect = el.getBoundingClientRect();
+        const x = ((e.clientX - rect.left) / rect.width) * 100;
+        const y = ((e.clientY - rect.top) / rect.height) * 100;
+        el.style.setProperty('--mx', x + '%');
+        el.style.setProperty('--my', y + '%');
+      });
+    });
+  </script>
+
+  <!-- ========== Web Audio 白噪音引擎 ========== -->
+  <script>
+    (function() {
+      // 只在首次用户交互时创建 AudioContext
+      let audioCtx = null;
+      let currentNodes = null;   // { source, gain, nodes... } 当前播放的拓扑
+      let currentType = null;    // 'rain' | 'ocean' | 'forest' | null
+      let fadeTimer = null;
+
+      const FADE_DURATION = 0.5; // 秒
+      const MASTER_VOL = 0.18;   // 整体音量，避免过载
+
+      // ---------- 创建白噪音缓冲 ----------
+      function createNoiseBuffer(ctx) {
+        const sr = ctx.sampleRate;
+        const len = sr * 4;       // 4 秒循环缓冲，节省内存
+        const buf = ctx.createBuffer(1, len, sr);
+        const data = buf.getChannelData(0);
+        for (let i = 0; i < len; i++) {
+          data[i] = Math.random() * 2 - 1;
+        }
+        return buf;
+      }
+
+      // ---------- 通用噪音源 ----------
+      function makeSource(ctx) {
+        const src = ctx.createBufferSource();
+        src.buffer = createNoiseBuffer(ctx);
+        src.loop = true;
+        return src;
+      }
+
+      // ---------- 淡出当前 → 淡入新的 ----------
+      function switchTo(type) {
+        if (!audioCtx) {
+          audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        if (audioCtx.state === 'suspended') {
+          audioCtx.resume();
+        }
+
+        const now = audioCtx.currentTime;
+
+        // 淡出当前声音
+        if (currentNodes) {
+          const oldGain = currentNodes.gain;
+          oldGain.gain.cancelScheduledValues(now);
+          oldGain.gain.setValueAtTime(oldGain.gain.value, now);
+          oldGain.gain.linearRampToValueAtTime(0, now + FADE_DURATION);
+          // FADE_DURATION 后断开
+          const stopTime = now + FADE_DURATION + 0.05;
+          try { currentNodes.source.stop(stopTime); } catch(e) {}
+          // 断开所有连接
+          setTimeout(() => {
+            try { currentNodes.source.disconnect(); } catch(e) {}
+            try { currentNodes.gain.disconnect(); } catch(e) {}
+            if (currentNodes.lp)  try { currentNodes.lp.disconnect(); } catch(e) {}
+            if (currentNodes.lfoDepth) try { currentNodes.lfoDepth.disconnect(); } catch(e) {}
+            if (currentNodes.lfo) try { currentNodes.lfo.disconnect(); } catch(e) {}
+            if (currentNodes.bias) try { currentNodes.bias.disconnect(); } catch(e) {}
+            if (currentNodes.modGain) try { currentNodes.modGain.disconnect(); } catch(e) {}
+            if (currentNodes.delay) try { currentNodes.delay.disconnect(); } catch(e) {}
+            if (currentNodes.delayGain) try { currentNodes.delayGain.disconnect(); } catch(e) {}
+            if (currentNodes.delay2) try { currentNodes.delay2.disconnect(); } catch(e) {}
+            if (currentNodes.delay2Gain) try { currentNodes.delay2Gain.disconnect(); } catch(e) {}
+            if (currentNodes.delay3) try { currentNodes.delay3.disconnect(); } catch(e) {}
+            if (currentNodes.delay3Gain) try { currentNodes.delay3Gain.disconnect(); } catch(e) {}
+            if (currentNodes.constSrc) try { currentNodes.constSrc.disconnect(); } catch(e) {}
+            if (currentNodes.paramGain) try { currentNodes.paramGain.disconnect(); } catch(e) {}
+          }, (FADE_DURATION + 0.1) * 1000);
+        }
+
+        // 如果 type 相同且只是想 mute，或 type 为 null
+        if (!type) {
+          document.documentElement.style.setProperty('--bg-color', '#0f0f1a');
+          currentNodes = null;
+          currentType = null;
+          return;
+        }
+
+        // ----- 构建新拓扑 -----
+        const ctx = audioCtx;
+        const src = makeSource(ctx);
+        const masterGain = ctx.createGain();
+        masterGain.gain.setValueAtTime(0, now);
+        masterGain.gain.linearRampToValueAtTime(MASTER_VOL, now + FADE_DURATION);
+        masterGain.connect(ctx.destination);
+
+        let nodes = { source: src, gain: masterGain };
+
+        if (type === 'rain') {
+          document.documentElement.style.setProperty('--bg-color', '#1a1a2e');
+          // 低通滤波 → 沙沙雨声
+          const lp = ctx.createBiquadFilter();
+          lp.type = 'lowpass';
+          lp.frequency.value = 1500;
+          lp.Q.value = 1.0;
+          src.connect(lp);
+          lp.connect(masterGain);
+          nodes.lp = lp;
+
+        } else if (type === 'ocean') {
+          document.documentElement.style.setProperty('--bg-color', '#0f2027');
+          // LFO 调制增益 → 涌动感
+          // 噪声经过一个增益节点，LFO 控制该增益的 gain 值在 0.2~1.0 之间摆动
+          const modGain = ctx.createGain();
+          modGain.gain.value = 0.6;
+
+          // LFO 振荡器，0.08Hz ≈ 12.5 秒一个完整起伏周期
+          const lfo = ctx.createOscillator();
+          lfo.type = 'sine';
+          lfo.frequency.value = 0.08;
+
+          // LFO 输出先经过一个增益控制深度
+          const lfoDepth = ctx.createGain();
+          lfoDepth.gain.value = 0.4; // ±0.4
+
+          // 用 ConstantSourceNode 提供 0.6 偏置 → gain 在 0.2~1.0 之间
+          const bias = ctx.createConstantSource();
+          bias.offset.value = 0.6;
+
+          bias.connect(modGain.gain);
+          lfo.connect(lfoDepth);
+          lfoDepth.connect(modGain.gain);
+
+          src.connect(modGain);
+          modGain.connect(masterGain);
+
+          lfo.start();
+          bias.start();
+          nodes.lfo = lfo;
+          nodes.lfoDepth = lfoDepth;
+          nodes.modGain = modGain;
+          nodes.bias = bias;
+
+        } else if (type === 'forest') {
+          document.documentElement.style.setProperty('--bg-color', '#0b1a0e');
+          // 延迟 + 混响 → 空旷森林
+          const delay = ctx.createDelay(1.0);
+          delay.delayTime.value = 0.35;
+          const delayGain = ctx.createGain();
+          delayGain.gain.value = 0.25;
+          const reverbGain = ctx.createGain();
+          reverbGain.gain.value = 0.35;
+
+          // 直达声
+          src.connect(masterGain);
+          // 延迟线
+          src.connect(delay);
+          delay.connect(delayGain);
+          delayGain.connect(masterGain);
+          // 简易混响（用多个延迟叠加模拟）
+          const delay2 = ctx.createDelay(1.0);
+          delay2.delayTime.value = 0.6;
+          const delay2Gain = ctx.createGain();
+          delay2Gain.gain.value = 0.12;
+          delay.connect(delay2);
+          delay2.connect(delay2Gain);
+          delay2Gain.connect(masterGain);
+          // 第三个延迟
+          const delay3 = ctx.createDelay(1.0);
+          delay3.delayTime.value = 0.9;
+          const delay3Gain = ctx.createGain();
+          delay3Gain.gain.value = 0.06;
+          delay2.connect(delay3);
+          delay3.connect(delay3Gain);
+          delay3Gain.connect(masterGain);
+
+          nodes.delay = delay;
+          nodes.delayGain = delayGain;
+          nodes.delay2 = delay2;
+          nodes.delay2Gain = delay2Gain;
+          nodes.delay3 = delay3;
+          nodes.delay3Gain = delay3Gain;
+        }
+
+        src.start(now + FADE_DURATION + 0.01); // 等淡出快完成再开始
+        currentNodes = nodes;
+        currentType = type;
+      }
+
+      // ---------- 绑定 UI ----------
+      document.querySelectorAll('.sound-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+          const type = this.dataset.sound;
+          if (currentType === type) {
+            // 点击正在播放的 → 静音（淡出）
+            switchTo(null);
+            return;
+          }
+          switchTo(type);
+        });
+      });
+    })();
+  </script>
+  <!-- ========== 计时器逻辑 ========== -->
+  <script>
+    (function() {
+      const TOTAL_SECONDS = 1500;       // 25分钟
+      const CIRCUMFERENCE = 2 * Math.PI * 120; // ≈ 753.98
+
+      const timerDisplay = document.getElementById('timerDisplay');
+      const ringProgress = document.getElementById('ringProgress');
+      const btnStart = document.getElementById('btnStart');
+      const btnReset = document.getElementById('btnReset');
+
+      // 状态
+      let remaining = TOTAL_SECONDS;     // 剩余秒数
+      let isRunning = false;             // 是否正在走
+      let intervalId = null;             // setInterval 句柄
+      let lastTickTime = null;           // 上次 tick 的 performance.now()
+
+      // ---------- 工具函数 ----------
+      function formatTime(sec) {
+        const m = Math.floor(sec / 60);
+        const s = sec % 60;
+        return String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
+      }
+
+      function updateRing(sec) {
+        const offset = CIRCUMFERENCE * (1 - sec / TOTAL_SECONDS);
+        ringProgress.setAttribute('stroke-dashoffset', offset);
+      }
+
+      const ringWrapper = document.querySelector('.ring-wrapper');
+
+      function updateDisplay(sec) {
+        timerDisplay.textContent = formatTime(sec);
+        updateRing(sec);
+
+        // ≤5分钟 → 紧急模式
+        if (sec > 0 && sec <= 300) {
+          ringProgress.classList.add('urgent');
+          ringWrapper.classList.add('shaking');
+        } else {
+          ringProgress.classList.remove('urgent');
+          ringWrapper.classList.remove('shaking');
+        }
+      }
+
+      // ---------- 核心 tick ----------
+      function tick() {
+        const now = performance.now();
+        const elapsed = (now - lastTickTime) / 1000; // 小数秒
+        lastTickTime = now;
+
+        remaining = Math.max(0, remaining - elapsed);
+
+        if (remaining <= 0) {
+          // 计时结束
+          remaining = 0;
+          updateDisplay(0);
+          stopTimer();
+          btnStart.textContent = '完成';
+          return;
+        }
+
+        // 更新显示（四舍五入到最近秒）
+        const displaySec = Math.ceil(remaining);
+        updateDisplay(displaySec);
+      }
+
+      // ---------- 启动 / 停止 ----------
+      function startTimer() {
+        if (intervalId) return;
+        isRunning = true;
+        lastTickTime = performance.now();
+        intervalId = setInterval(tick, 50); // 50ms 轮询保证精度
+        btnStart.textContent = '暂停';
+      }
+
+      function stopTimer() {
+        if (intervalId) {
+          clearInterval(intervalId);
+          intervalId = null;
+        }
+        isRunning = false;
+        // 如果还有剩余时间，按钮文字切回"开始"
+        if (remaining > 0) {
+          btnStart.textContent = '开始';
+        }
+      }
+
+      // ---------- 重置 ----------
+      function resetTimer() {
+        stopTimer();
+        remaining = TOTAL_SECONDS;
+        updateDisplay(TOTAL_SECONDS);
+        btnStart.textContent = '开始';
+      }
+
+      // ---------- 事件绑定 ----------
+      btnStart.addEventListener('click', function() {
+        if (remaining <= 0) {
+          // 已经完成 → 重置再开始
+          resetTimer();
+          startTimer();
+          return;
+        }
+        if (isRunning) {
+          stopTimer();
+        } else {
+          startTimer();
+        }
+      });
+
+      btnReset.addEventListener('click', resetTimer);
+
+      // 初始化显示
+      updateDisplay(TOTAL_SECONDS);
+    })();
+  </script>
+</body>
+</html>
